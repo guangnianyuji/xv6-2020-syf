@@ -273,6 +273,8 @@ fork(void)
     release(&np->lock);
     return -1;
   }
+  np->mask=p->mask;
+
   np->sz = p->sz;
 
   np->parent = p;
@@ -692,4 +694,27 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+uint64
+proc_num(void)
+{
+ struct proc *p;
+ // counting the number of processes
+ uint64 num = 0;
+ // traverse all processes
+ for (p = proc; p < &proc[NPROC]; p++)
+ {
+ // add lock
+  acquire(&p->lock);
+  // if the processes's state is not UNUSED
+  if (p->state != UNUSED)
+  {
+ // the num add one
+    num++;
+  }
+  // release lock
+  release(&p->lock);
+ }
+ return num;
 }
