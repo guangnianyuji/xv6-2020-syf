@@ -34,12 +34,14 @@ procinit(void)
       // Allocate a page for the process's kernel stack.
       // Map it high in memory, followed by an invalid
       // guard page.
+      /* 
       char *pa = kalloc();
       if(pa == 0)
         panic("kalloc");
       uint64 va = KSTACK((int) (p - proc));
       kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
       p->kstack = va;
+      */
   }
   kvminithart();
 }
@@ -85,7 +87,7 @@ allocpid() {
   return pid;
 }
 
-// Look in the process table for an UNUSED proc.
+// Look in the process table for an UNUSED proc.找没有运行的进程
 // If found, initialize state required to run in the kernel,
 // and return with p->lock held.
 // If there are no free procs, or a memory allocation fails, return 0.
@@ -121,6 +123,20 @@ found:
     return 0;
   }
 
+  p->pagetable_k=proc_kpt_init();
+  if(p->pagetable_k == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
+  char *pa = kalloc();
+  if(pa == 0) 
+   panic("kalloc");
+  uint64 va = KSTACK((int) (p - proc));
+  uvmmap(p->pagetable_k,va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+  p->kstack = va;
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -129,7 +145,23 @@ found:
 
   return p;
 }
-
+void
+proc_free_pagetable_k(pagetable_t kernelpt)
+{
+  // similar to the freewalk method
+  // there are 2^9 = 512 PTEs in a page table.
+  for(int i = 0; i < 512; i++){
+    pte_t pte = kernelpt[i];
+    if(pte & PTE_V){
+      kernelpt[i] = 0;
+      if ((pte & (PTE_R|PTE_W|PTE_X)) == 0){
+        uint64 child = PTE2PA(pte);
+        proc_free_pagetable_k((pagetable_t)child);
+      }
+    }
+  }
+  kfree((void*)kernelpt);
+}
 // free a proc structure and the data hanging from it,
 // including user pages.
 // p->lock must be held.
@@ -150,6 +182,13 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+
+  // free the kernel stack in the RAM
+  uvmunmap(p->pagetable_k, p->kstack, 1, 1);
+  p->kstack = 0;
+
+  proc_free_pagetable_k(p->pagetable_k);
+  p->pagetable_k=0;
 }
 
 // Create a user page table for a given process,
@@ -220,10 +259,11 @@ userinit(void)
   // and data into it.
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
-
+   u2kvmcopy(p->pagetable, p->pagetable_k, 0, p->sz);
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
   p->trapframe->sp = PGSIZE;  // user stack pointer
+ 
 
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
@@ -243,9 +283,15 @@ growproc(int n)
 
   sz = p->sz;
   if(n > 0){
+    // 加上PLIC限制
+    if (PGROUNDUP(sz + n) >= PLIC){
+      return -1;
+    }
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
+    // 复制一份到内核页表
+    u2kvmcopy(p->pagetable, p->pagetable_k, sz - n, sz);
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
@@ -274,6 +320,7 @@ fork(void)
     return -1;
   }
   np->sz = p->sz;
+  u2kvmcopy(np->pagetable, np->pagetable_k, 0, np->sz);
 
   np->parent = p;
 
@@ -473,7 +520,12 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        //将进程单独的内核页表放入SATP寄存器
+        w_satp(MAKE_SATP(p->pagetable_k));
+  		  sfence_vma();
         swtch(&c->context, &p->context);
+        // 结束时，将全局内核页表加载回去
+        kvminithart();
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
