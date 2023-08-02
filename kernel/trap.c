@@ -76,9 +76,19 @@ usertrap(void)
   if(p->killed)
     exit(-1);
 
-  // give up the CPU if this is a timer interrupt.
+  // give up the CPU if this is a timer interrupt.意思是这个是计时器中断
   if(which_dev == 2)
+  {
+    p->ticks_count++;
+    if( p->ticks_count==p->alarm_interval)
+    {
+      //p->ticks_count=0;
+      *p->pretrapframe=*p->trapframe;
+      p->trapframe->epc=p->alarm_handler;
+    }
     yield();
+  }
+ 
 
   usertrapret();
 }

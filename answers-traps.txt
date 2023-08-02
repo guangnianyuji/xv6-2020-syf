@@ -1,0 +1,73 @@
+1. Which registers contain arguments to functions? For example, which register holds 13 in main's call to printf?
+
+   
+
+   a0,a1,a2里有参数，13在a2寄存器。
+
+2. Where is the call to function f in the assembly code for main? Where is the call to g? (Hint: the compiler may inline functions.)
+
+   在C代码中，main调用f，f调用g。而在生成的汇编中，main函数进行了内联优化处理。
+
+3. At what address is the function printf located?
+
+   从𝒄𝒂𝒍𝒍.𝒂𝒔𝒎第 50 行看出 printf 的地址在 0x630
+
+4. What value is in the register ra just after the jalr to printf in main?
+
+   
+
+   Ra 寄存器用来保存函数执行以后的下一个执行指令的地址，为 0x38
+
+   分析：
+
+   `auipc`(Add Upper Immediate to PC)：`auipc rd imm`，将高位立即数加到PC上，该指令将20位的立即数左移12位之后（右侧补0）加上PC的值,将结果保存到[rd]
+
+   ![img](实验报告.assets/p1.png)
+
+   `jalr` (jump and link register)：`jalr rd, offset(rs1)`跳转并链接寄存器。jalr指令会将当前PC+4保存在rd中，然后跳转到指定的偏移地址`offset(rs1)`。
+
+    ![img](实验报告.assets/p2.png)
+
+   来看XV6的代码：
+
+   ```asm
+     30: 00000097       auipc ra,0x0
+     34: 600080e7       jalr  1536(ra) # 630 <printf>
+   ```
+
+   第一行代码：`00000097H=00...0 0000 1001 0111B`，对比指令格式，可见imm=0，dest=00001，opcode=0010111，对比汇编指令可知，auipc的操作码是0010111，ra寄存器代码是00001。这行代码将0x0左移12位（还是0x0）加到PC（当前为0x30）上并存入ra中，即ra中保存的是0x30
+
+   第2行代码：`600080e7H=0110 0...0 1000 0000 1110 0111B`，可见imm=0110 0000 0000，rs1=00001，funct3=000，rd=00001，opcode=1100111，rs1和rd的知识码都是00001，即都为寄存器`ra`。这对比jalr的标准格式有所不同，可能是此两处使用寄存器相同时，汇编中可以省略`rd`部分。
+
+   ra中保存的是0x30，加上0x600后为0x630，即`printf`的地址，执行此行代码后，将跳转到printf函数执行，并将PC+4=0X34+0X4=0X38保存到`ra`中，供之后返回使用。
+
+   故Ra 寄存器用来保存函数执行以后的下一个执行指令的地址，为 0x38。
+
+5. Run the following code.
+
+   ```
+   unsigned int i = 0x00646c72;
+   printf("H%x Wo%s", 57616, &i)
+   ```
+
+   What is the output? Here's an ASCII table that maps bytes to characters.
+
+   The output depends on that fact that the RISC-V is little-endian. If the RISC-V were instead big-endian what would you set `i` to in order to yield the same output? Would you need to change `57616` to a different value?
+
+   
+
+   57616用16进制表示为0XE110。
+
+   i,0x00646c72小端存储为72-6c-64-00，对照ASCII码表,72:r 6c:l 64:d 00:充当字符串结尾标识。
+
+   因此输出为：HE110 World
+
+   如果 risc-v 是大端序，i 需要设置为 0x726c64，57616 不需要变
+
+6. In the following code, what is going to be printed after 'y='? (note: the answer is not a specific value.) Why does this happen?
+
+   ```
+   printf("x=%d y=%d", 3);
+   ```
+
+​		输出当前 a2 寄存器的值，所以不确定。
