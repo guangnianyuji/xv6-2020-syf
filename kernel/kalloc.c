@@ -21,12 +21,16 @@ struct run {
 struct {
   struct spinlock lock;
   struct run *freelist;
-} kmem;
+} kmem[NCPU];
 
 void
 kinit()
 {
-  initlock(&kmem.lock, "kmem");
+  for (int i = 0; i < NCPU; i++) {
+    char name[9] = {0};
+    snprintf(name, 8, "kmem-%d", i);
+    initlock(&kmem[i].lock, name);
+  }//分别为kmem-0,kmem-1···
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -55,11 +59,37 @@ kfree(void *pa)
   memset(pa, 1, PGSIZE);
 
   r = (struct run*)pa;
+  push_off();//关中断
+  int id=cpuid();
 
-  acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
-  release(&kmem.lock);
+  acquire(&kmem[id].lock);
+  r->next = kmem[id].freelist;
+  kmem[id].freelist = r;
+  release(&kmem[id].lock);
+  pop_off();//开中断
+}
+
+struct run*
+ksteal(int cpu){
+  struct run *r;
+  for (int i = 1; i < NCPU; i++) {
+    // 从右边的第一个邻居开始偷
+    int next_cpu = (cpu + i) % NCPU;
+    // --- critical session ---
+    acquire(&kmem[next_cpu].lock);
+    r = kmem[next_cpu].freelist;
+    if (r) {
+      // steal one page
+      kmem[next_cpu].freelist = r->next;
+    }
+    release(&kmem[next_cpu].lock);
+    // --- end of critical session ---
+    if (r) {
+      break;
+    }
+  }
+  // 有可能返回NULL, 如果邻居也都没有空余页的话
+  return r;
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -69,14 +99,23 @@ void *
 kalloc(void)
 {
   struct run *r;
+  push_off();
+  int id=cpuid();
 
-  acquire(&kmem.lock);
-  r = kmem.freelist;
-  if(r)
-    kmem.freelist = r->next;
-  release(&kmem.lock);
+  acquire(&kmem[id].lock);
+  r = kmem[id].freelist;
+  if(r){
+    kmem[id].freelist = r->next;
+  }
+  else{
+    r=ksteal(id);
+  }
+   
+  release(&kmem[id].lock);
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
+
+  pop_off();
   return (void*)r;
 }
