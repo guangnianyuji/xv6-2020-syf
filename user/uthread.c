@@ -10,8 +10,28 @@
 #define STACK_SIZE  8192
 #define MAX_THREAD  4
 
+// Saved registers for user-level thread switching
+struct thread_context {
+  uint64 ra;//return address
+  uint64 sp;//current top of the stack
+
+  // callee-saved
+  uint64 s0;
+  uint64 s1;
+  uint64 s2;
+  uint64 s3;
+  uint64 s4;
+  uint64 s5;
+  uint64 s6;
+  uint64 s7;
+  uint64 s8;
+  uint64 s9;
+  uint64 s10;
+  uint64 s11;
+};
 
 struct thread {
+  struct thread_context context;
   char       stack[STACK_SIZE]; /* the thread's stack */
   int        state;             /* FREE, RUNNING, RUNNABLE */
 
@@ -37,7 +57,7 @@ thread_schedule(void)
 {
   struct thread *t, *next_thread;
 
-  /* Find another runnable thread. */
+  /* Find another runnab~le thread. */
   next_thread = 0;
   t = current_thread + 1;
   for(int i = 0; i < MAX_THREAD; i++){
@@ -63,6 +83,7 @@ thread_schedule(void)
      * Invoke thread_switch to switch from t to next_thread:
      * thread_switch(??, ??);
      */
+    thread_switch((uint64) t, (uint64) current_thread);
   } else
     next_thread = 0;
 }
@@ -77,6 +98,11 @@ thread_create(void (*func)())
   }
   t->state = RUNNABLE;
   // YOUR CODE HERE
+  memset((void *)&t->stack, 0, STACK_SIZE);
+  memset((void *)&t->context, 0, sizeof(struct thread_context));
+
+  t->context.sp = (uint64) ((char *)&t->stack + STACK_SIZE);  // 初始sp在栈顶
+  t->context.ra = (uint64) func;  // 初始跳转位置是user传进来的线程函数
 }
 
 void 
