@@ -1,3 +1,4 @@
+#include "fcntl.h"
 struct buf;
 struct context;
 struct file;

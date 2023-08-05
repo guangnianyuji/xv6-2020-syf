@@ -1,0 +1,9 @@
+{
+    "C_Cpp.errorSquiggles": "disabled",
+    "files.associations": {
+        "types.h": "c",
+        "memlayout.h": "c",
+        "defs.h": "c",
+        "fcntl.h": "c"
+    }
+}

@@ -5,7 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
-
+ 
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
@@ -133,6 +133,7 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
+
 
   return p;
 }
@@ -299,7 +300,13 @@ fork(void)
   safestrcpy(np->name, p->name, sizeof(p->name));
 
   pid = np->pid;
-
+  for (int i = 0; i < NVMA; i++) {
+    np->vmas[i].valid = 0;
+    if (p->vmas[i].valid) { // 复制vma entry
+      memmove(&np->vmas[i], &p->vmas[i], sizeof(struct vma));
+      filedup(p->vmas[i].f); // 增加引用次数
+    }
+  }
   np->state = RUNNABLE;
 
   release(&np->lock);
@@ -352,7 +359,16 @@ exit(int status)
       p->ofile[fd] = 0;
     }
   }
-
+  for (int i = 0; i < NVMA; i++) {
+    if (p->vmas[i].valid) {
+      if (p->vmas[i].flags & MAP_SHARED) {
+        filewrite(p->vmas[i].f, p->vmas[i].addr, p->vmas[i].length);
+      }
+      fileclose(p->vmas[i].f);
+      uvmunmap(p->pagetable, p->vmas[i].addr, p->vmas[i].length / PGSIZE, 1);
+      p->vmas[i].valid = 0;
+    }
+  }
   begin_op();
   iput(p->cwd);
   end_op();
