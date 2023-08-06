@@ -32,7 +32,7 @@ trans(int fd_l[2])
     }
 
     int pid=fork();
-    if(pid==0){
+    if(pid==0){//是子进程
         trans(fd_r);
     }
     else{
@@ -47,19 +47,15 @@ int
 main(int argc, char const *argv[])
 {
     int fd_r[2];
-     
-    pipe(fd_r);
-     
-    
+    pipe(fd_r);//初始化通道的写端（右端r）  
      
     for(int i=2;i<=35;i++){
         write(fd_r[WR],&i,sizeof(int));
-
     }
 
     int pid=fork();
 
-    if(pid==0){
+    if(pid==0){//是子进程
         trans(fd_r);
     }
     else{
